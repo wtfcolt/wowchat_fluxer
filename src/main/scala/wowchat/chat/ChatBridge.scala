@@ -200,6 +200,11 @@ class ChatBridge(transport: ChatTransport, connectionCallback: CommonConnectionC
     connectionCallback.disconnected
   }
 
+  override def onFatalError(reason: String): Unit = {
+    logger.error(s"${transport.name} connection failed permanently: $reason")
+    connectionCallback.error
+  }
+
   private[chat] def buildRouting(channels: Seq[ChatChannel]): Routing = {
     val chatToWow = mutable.LinkedHashMap.empty[String, mutable.ArrayBuffer[WowChannelConfig]]
     val wowToChat = mutable.LinkedHashMap.empty[(Byte, Option[String]), mutable.ArrayBuffer[(ChatChannel, FluxerChannelConfig)]]

@@ -11,6 +11,9 @@ trait ChatTransportListener {
   def onMessage(message: IncomingChatMessage): Unit
 
   def onDisconnected(): Unit
+
+  // The transport cannot continue (for example the service rejected the credentials).
+  def onFatalError(reason: String): Unit
 }
 
 // A connection to a specific chat service.
