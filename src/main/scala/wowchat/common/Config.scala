@@ -11,15 +11,15 @@ import wowchat.game.GamePackets
 import scala.collection.JavaConverters._
 import scala.reflect.runtime.universe.{TypeTag, typeOf}
 
-case class WowChatConfig(discord: DiscordConfig, wow: Wow, guildConfig: GuildConfig, channels: Seq[ChannelConfig], filters: Option[FiltersConfig])
-case class DiscordConfig(token: String, enableDotCommands: Boolean, dotCommandsWhitelist: Set[String], enableCommandsChannels: Set[String], enableTagFailedNotifications: Boolean, itemDatabase: Option[String])
+case class WowChatConfig(chat: ChatConfig, wow: Wow, guildConfig: GuildConfig, channels: Seq[ChannelConfig], filters: Option[FiltersConfig])
+case class ChatConfig(enableDotCommands: Boolean, dotCommandsWhitelist: Set[String], enableCommandsChannels: Set[String], enableTagFailedNotifications: Boolean, itemDatabase: Option[String])
 case class Wow(locale: String, platform: Platform.Value, realmBuild: Option[Int], gameBuild: Option[Int], realmlist: RealmListConfig, account: Array[Byte], password: String, character: String, enableServerMotd: Boolean)
 case class RealmListConfig(name: String, host: String, port: Int)
 case class GuildConfig(notificationConfigs: Map[String, GuildNotificationConfig])
 case class GuildNotificationConfig(enabled: Boolean, format: String, channel: Option[String])
-case class ChannelConfig(chatDirection: ChatDirection, wow: WowChannelConfig, discord: DiscordChannelConfig)
+case class ChannelConfig(chatDirection: ChatDirection, wow: WowChannelConfig, fluxer: FluxerChannelConfig)
 case class WowChannelConfig(id: Option[Int], tp: Byte, channel: Option[String] = None, format: String, filters: Option[FiltersConfig])
-case class DiscordChannelConfig(channel: String, format: String, filters: Option[FiltersConfig])
+case class FluxerChannelConfig(channel: String, format: String, filters: Option[FiltersConfig])
 case class FiltersConfig(enabled: Boolean, patterns: Seq[String])
 
 object WowChatConfig extends GamePackets {
@@ -35,10 +35,19 @@ object WowChatConfig extends GamePackets {
       ConfigFactory.load(confFile)
     }).resolve
 
-    val discordConf = config.getConfig("discord")
+    fromConfig(config)
+  }
+
+  private[common] def fromConfig(config: Config): WowChatConfig = {
+    if (config.hasPath("discord")) {
+      throw new IllegalArgumentException("The \"discord\" configuration section is no longer supported. " +
+        "Shared chat settings now belong in the \"chat\" section and Fluxer settings in the \"fluxer\" section. " +
+        "See the sample wowchat.conf.")
+    }
+
     val wowConf = config.getConfig("wow")
     val guildConf = getConfigOpt(config, "guild")
-    val channelsConf = config.getConfig("chat")
+    val chatConf = config.getConfig("chat")
     val filtersConf = getConfigOpt(config, "filters")
 
     // we gotta load this first to initialize constants that change between versions :OMEGALUL:
@@ -46,15 +55,14 @@ object WowChatConfig extends GamePackets {
     expansion = WowExpansion.valueOf(version)
 
     WowChatConfig(
-      DiscordConfig(
-        discordConf.getString("token"),
-        getOpt[Boolean](discordConf, "enable_dot_commands").getOrElse(true),
-        getOpt[util.List[String]](discordConf, "dot_commands_whitelist")
+      ChatConfig(
+        getOpt[Boolean](chatConf, "enable_dot_commands").getOrElse(true),
+        getOpt[util.List[String]](chatConf, "dot_commands_whitelist")
           .getOrElse(new util.ArrayList[String]()).asScala.map(_.toLowerCase).toSet,
-        getOpt[util.List[String]](discordConf, "enable_commands_channels")
+        getOpt[util.List[String]](chatConf, "enable_commands_channels")
           .getOrElse(new util.ArrayList[String]()).asScala.map(_.toLowerCase).toSet,
-        getOpt[Boolean](discordConf, "enable_tag_failed_notifications").getOrElse(true),
-        getOpt[String](discordConf, "item_database")
+        getOpt[Boolean](chatConf, "enable_tag_failed_notifications").getOrElse(true),
+        getOpt[String](chatConf, "item_database")
       ),
       Wow(
         getOpt[String](wowConf, "locale").getOrElse("enUS"),
@@ -68,7 +76,7 @@ object WowChatConfig extends GamePackets {
         getOpt[Boolean](wowConf, "enable_server_motd").getOrElse(true)
       ),
       parseGuildConfig(guildConf),
-      parseChannels(channelsConf),
+      parseChannels(chatConf),
       parseFilters(filtersConf)
     )
   }
@@ -166,10 +174,15 @@ object WowChatConfig extends GamePackets {
     channelsConf.getObjectList("channels").asScala
       .map(_.toConfig)
       .map(channel => {
+        if (channel.hasPath("discord")) {
+          throw new IllegalArgumentException("Chat channel entries now use a \"fluxer\" block instead of \"discord\". " +
+            "See the sample wowchat.conf.")
+        }
+
         val wowChannel = getOpt[String](channel, "wow.channel")
 
         ChannelConfig(
-          ChatDirection.withName(channel.getString("direction")),
+          ChatDirection.parse(channel.getString("direction")),
           WowChannelConfig(
             getOpt[Int](channel, "wow.id"),
             ChatEvents.parse(channel.getString("wow.type")),
@@ -177,10 +190,10 @@ object WowChatConfig extends GamePackets {
             getOpt[String](channel, "wow.format").getOrElse(""),
             parseFilters(getConfigOpt(channel, "wow.filters"))
           ),
-          DiscordChannelConfig(
-            channel.getString("discord.channel"),
-            channel.getString("discord.format"),
-            parseFilters(getConfigOpt(channel, "discord.filters"))
+          FluxerChannelConfig(
+            channel.getString("fluxer.channel"),
+            channel.getString("fluxer.format"),
+            parseFilters(getConfigOpt(channel, "fluxer.filters"))
           )
         )
     })
@@ -259,5 +272,11 @@ object WowExpansion extends Enumeration {
 
 object ChatDirection extends Enumeration {
   type ChatDirection = Value
-  val both, wow_to_discord, discord_to_wow = Value
+  val both, wow_to_fluxer, fluxer_to_wow = Value
+
+  def parse(direction: String): ChatDirection = {
+    values.find(_.toString == direction).getOrElse(
+      throw new IllegalArgumentException(s"""Invalid chat direction "$direction". Valid values are: ${values.mkString(", ")}.""")
+    )
+  }
 }

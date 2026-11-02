@@ -148,7 +148,7 @@ class GamePacketHandlerWotLK(realmId: Int, realmName: String, sessionKey: Array[
     }
 
     // ignore if from an unhandled channel - unless it is a guild achievement message
-    if (tp != ChatEvents.CHAT_MSG_GUILD_ACHIEVEMENT && !Global.wowToDiscord.contains((tp, channelName.map(_.toLowerCase)))) {
+    if (tp != ChatEvents.CHAT_MSG_GUILD_ACHIEVEMENT && !Global.chat.shouldForwardWowChat(tp, channelName)) {
       return None
     }
 
@@ -171,7 +171,7 @@ class GamePacketHandlerWotLK(realmId: Int, realmName: String, sessionKey: Array[
     // This is a guild event so guid MUST be in roster already
     // (unless some weird edge case -> achievement came before roster update)
     guildRoster.get(guid).foreach(player => {
-      Global.discord.sendAchievementNotification(player.name, achievementId)
+      Global.chat.sendAchievementNotification(player.name, achievementId)
     })
   }
 

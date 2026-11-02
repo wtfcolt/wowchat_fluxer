@@ -3,13 +3,10 @@ package wowchat
 import java.util.concurrent.{Executors, TimeUnit}
 
 import wowchat.common.{CommonConnectionCallback, Global, ReconnectDelay, WowChatConfig}
-import wowchat.discord.Discord
 import wowchat.game.GameConnector
 import wowchat.realm.{RealmConnectionCallback, RealmConnector}
 import com.typesafe.scalalogging.StrictLogging
 import io.netty.channel.nio.NioEventLoopGroup
-
-import scala.io.Source
 
 object WoWChat extends StrictLogging {
 
@@ -24,12 +21,6 @@ object WoWChat extends StrictLogging {
       "wowchat.conf"
     }
     Global.config = WowChatConfig(confFile)
-
-    try {
-      checkForNewVersion
-    } catch {
-      case e: Exception => logger.error("Failed to check for a new version!", e)
-    }
 
     val gameConnectionController: CommonConnectionCallback = new CommonConnectionCallback {
 
@@ -62,7 +53,7 @@ object WoWChat extends StrictLogging {
 
       def doReconnect: Unit = {
         Global.group.shutdownGracefully()
-        Global.discord.changeRealmStatus("Connecting...")
+        Global.chat.changeRealmStatus("Connecting...")
         val delay = reconnectDelay.getNext
         logger.info(s"Disconnected from server! Reconnecting in $delay seconds...")
 
@@ -72,29 +63,9 @@ object WoWChat extends StrictLogging {
       }
     }
 
-    logger.info("Connecting to Discord...")
-    Global.discord = new Discord(new CommonConnectionCallback {
-      override def connected: Unit = gameConnectionController.connect
-
-      override def error: Unit = sys.exit(1)
-    })
-  }
-
-  private def checkForNewVersion = {
-    // This is JSON, but I really just didn't want to import a full blown JSON library for one string.
-    val data = Source.fromURL("https://api.github.com/repos/fjaros/wowchat/releases/latest").mkString
-    val regex = "\"tag_name\":\"(.+?)\",".r
-    val repoTagName = regex
-      .findFirstMatchIn(data)
-      .map(_.group(1))
-      .getOrElse("NOT FOUND")
-
-    if (repoTagName != RELEASE) {
-      logger.error( "~~~ !!!                YOUR WoWChat VERSION IS OUT OF DATE                !!! ~~~")
-      logger.error(s"~~~ !!!                     Current Version:  $RELEASE                      !!! ~~~")
-      logger.error(s"~~~ !!!                     Repo    Version:  $repoTagName                      !!! ~~~")
-      logger.error( "~~~ !!! RUN git pull OR GO TO https://github.com/fjaros/wowchat TO UPDATE !!! ~~~")
-      logger.error( "~~~ !!!                YOUR WoWChat VERSION IS OUT OF DATE                !!! ~~~")
-    }
+    // The Fluxer transport is added in a later milestone of the Fluxer migration. Until then there is no chat
+    // service to connect to, so the game connection (gameConnectionController) is never started.
+    logger.error("No chat transport is available yet. The Fluxer transport has not been implemented.")
+    sys.exit(1)
   }
 }
