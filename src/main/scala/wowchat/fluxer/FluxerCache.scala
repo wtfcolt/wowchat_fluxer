@@ -56,6 +56,18 @@ class FluxerCache extends StrictLogging {
 
   @volatile private var current: FluxerSnapshot = FluxerSnapshot.empty
 
+  // Guild id -> users changed by Gateway events while an HTTP member list load is running for that guild.
+  // The load's pages are older than those events, so they must not overwrite them.
+  private val changedDuringLoad = scala.collection.mutable.Map.empty[String, scala.collection.mutable.Set[String]]
+
+  def beginMemberLoad(guildId: String): Unit = synchronized {
+    changedDuringLoad(guildId) = scala.collection.mutable.Set.empty
+  }
+
+  def endMemberLoad(guildId: String): Unit = synchronized {
+    changedDuringLoad.remove(guildId)
+  }
+
   def snapshot: FluxerSnapshot = current
 
   // A new session (READY after Identify): forget everything and list the guilds as unavailable until their
@@ -69,6 +81,7 @@ class FluxerCache extends StrictLogging {
     Try(applyEvent(before, event, data)) match {
       case Success((after, becameAvailable)) =>
         current = after
+        recordMemberChanges(event, data)
         CacheUpdate(before.textChannels != after.textChannels, becameAvailable)
       case Failure(e) =>
         logger.warn(s"Ignoring a Fluxer $event event that could not be applied: ${e.getClass.getSimpleName}")
@@ -76,15 +89,30 @@ class FluxerCache extends StrictLogging {
     }
   }
 
-  // Members from the HTTP member list.
+  // Members from the HTTP member list. Members changed by Gateway events since the load began are skipped.
   def upsertMembers(guildId: String, members: Seq[JsonNode]): Int = synchronized {
+    val changed = changedDuringLoad.get(guildId).map(_.toSet).getOrElse(Set.empty[String])
     current.guilds.get(guildId) match {
       case Some(guild) =>
-        val parsed = members.flatMap(parseMember(_, guild.members))
+        val parsed = members.flatMap(parseMember(_, guild.members)).filterNot(m => changed.contains(m.userId))
         current = current.copy(guilds = current.guilds + (guildId -> guild.copy(members = guild.members ++ parsed.map(m => m.userId -> m))))
         parsed.size
       case None => 0
     }
+  }
+
+  private def recordMemberChanges(event: String, data: JsonNode): Unit = {
+    data.id("guild_id").flatMap(changedDuringLoad.get).foreach(changed => {
+      event match {
+        case "GUILD_MEMBER_ADD" | "GUILD_MEMBER_UPDATE" | "GUILD_MEMBER_REMOVE" =>
+          data.obj("user").flatMap(_.id("id")).foreach(changed += _)
+        case "GUILD_MEMBERS_CHUNK" =>
+          data.arr("members").flatMap(_.obj("user")).flatMap(_.id("id")).foreach(changed += _)
+        case "MESSAGE_CREATE" if data.has("member") =>
+          data.obj("author").flatMap(_.id("id")).foreach(changed += _)
+        case _ =>
+      }
+    })
   }
 
   private def applyEvent(snapshot: FluxerSnapshot, event: String, data: JsonNode): (FluxerSnapshot, Option[String]) = {

@@ -89,7 +89,7 @@ object FluxerDiscovery extends StrictLogging {
     throw new FluxerConfigurationException(s"Fluxer instance discovery at $url failed: $lastError")
   }
 
-  private def validateUrl(url: String, schemes: Set[String], name: String): Either[String, Unit] = {
+  private[fluxer] def validateUrl(url: String, schemes: Set[String], name: String): Either[String, Unit] = {
     Try(new URI(url)).toOption match {
       case Some(uri) if uri.getScheme != null && schemes.contains(uri.getScheme.toLowerCase) && uri.getHost != null => Right(())
       case _ => Left(s"$name must be an absolute ${schemes.toSeq.sorted.mkString(" or ")} URL")

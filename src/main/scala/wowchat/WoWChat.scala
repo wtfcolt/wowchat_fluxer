@@ -1,16 +1,24 @@
 package wowchat
 
-import java.util.concurrent.{Executors, TimeUnit}
+import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
 
+import wowchat.chat.{ChatBridge, ChatTransport}
 import wowchat.common.{CommonConnectionCallback, Global, ReconnectDelay, WowChatConfig}
+import wowchat.fluxer.FluxerTransport
 import wowchat.game.GameConnector
 import wowchat.realm.{RealmConnectionCallback, RealmConnector}
 import com.typesafe.scalalogging.StrictLogging
 import io.netty.channel.nio.NioEventLoopGroup
 
+import scala.util.Try
+
 object WoWChat extends StrictLogging {
 
   private val RELEASE = "v1.4.0"
+
+  // Released by the shutdown hook. The Fluxer client runs on daemon threads, so main waits on this to keep the
+  // application running until it is stopped.
+  private val stopped = new CountDownLatch(1)
 
   def main(args: Array[String]): Unit = {
     logger.info(s"Running WoWChat - $RELEASE")
@@ -20,7 +28,10 @@ object WoWChat extends StrictLogging {
       logger.info("No configuration file supplied. Trying with default wowchat.conf.")
       "wowchat.conf"
     }
-    Global.config = WowChatConfig(confFile)
+    Global.config = Try(WowChatConfig(confFile)).fold(e => {
+      logger.error(s"Invalid configuration in $confFile: ${e.getMessage}")
+      sys.exit(1)
+    }, identity)
 
     val gameConnectionController: CommonConnectionCallback = new CommonConnectionCallback {
 
@@ -37,7 +48,7 @@ object WoWChat extends StrictLogging {
 
           override def disconnected: Unit = doReconnect
 
-          override def error: Unit = sys.exit(1)
+          override def error: Unit = exitAsync(1)
         })
 
         realmConnector.connect
@@ -63,9 +74,44 @@ object WoWChat extends StrictLogging {
       }
     }
 
-    // The Fluxer transport is added in a later milestone of the Fluxer migration. Until then there is no chat
-    // service to connect to, so the game connection (gameConnectionController) is never started.
-    logger.error("No chat transport is available yet. The Fluxer transport has not been implemented.")
-    sys.exit(1)
+    sys.addShutdownHook(shutdown())
+
+    logger.info("Connecting to Fluxer...")
+    startChat(gameConnectionController)
+    stopped.await()
+  }
+
+  // Starts the chat side. Once the chat channels are known, gameConnectionController connects to WoW.
+  private[wowchat] def startChat(gameConnectionController: CommonConnectionCallback,
+                                 transport: => ChatTransport = new FluxerTransport(Global.config.fluxer)): ChatBridge = {
+    val bridge = new ChatBridge(transport, new CommonConnectionCallback {
+      override def connected: Unit = gameConnectionController.connect
+
+      override def error: Unit = exitAsync(1)
+    })
+    Global.chat = bridge
+    bridge.start()
+    bridge
+  }
+
+  // Closes the chat connection (sending queued messages first) and the WoW connection. Safe to call more than once.
+  private[wowchat] def shutdown(): Unit = {
+    logger.info("Shutting down...")
+    Option(Global.chat).foreach(chat => {
+      Try(chat.shutdown()).failed.foreach(e => logger.error(s"Error while closing the chat connection: ${e.getMessage}"))
+    })
+    Option(Global.group).foreach(group => {
+      Try(group.shutdownGracefully(0, 2, TimeUnit.SECONDS).awaitUninterruptibly(5, TimeUnit.SECONDS))
+        .failed.foreach(e => logger.error(s"Error while closing the WoW connection: ${e.getMessage}"))
+    })
+    stopped.countDown()
+  }
+
+  // Exits from a new thread, so a network thread reporting a fatal error is not blocked by the shutdown hook
+  // that sys.exit runs (the hook waits for those threads to stop).
+  private[wowchat] def exitAsync(status: Int): Unit = {
+    new Thread(new Runnable {
+      override def run(): Unit = sys.exit(status)
+    }, "wowchat-exit").start()
   }
 }

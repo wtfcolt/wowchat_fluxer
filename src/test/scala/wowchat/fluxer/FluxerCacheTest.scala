@@ -127,6 +127,33 @@ class FluxerCacheTest {
   }
 
   @Test
+  def memberListPagesDoNotOverwriteNewerEvents(): Unit = {
+    apply("GUILD_CREATE", guildCreate)
+    cache.beginMemberLoad("10")
+    // while the load runs: a nickname changes, a member leaves, another speaks
+    apply("GUILD_MEMBER_UPDATE", """{"guild_id":"10","user":{"id":"1","username":"ada"},"nick":"New Nick"}""")
+    apply("GUILD_MEMBER_ADD", """{"guild_id":"10","user":{"id":"2","username":"bob"}}""")
+    apply("GUILD_MEMBER_REMOVE", """{"guild_id":"10","user":{"id":"2"}}""")
+    apply("MESSAGE_CREATE", """{"guild_id":"10","channel_id":"100","author":{"id":"3","username":"cy"},"member":{"nick":"Fresh"}}""")
+    // the (older) page arrives afterwards
+    cache.upsertMembers("10", Seq(
+      json("""{"user":{"id":"1","username":"ada"},"nick":"Old Nick"}"""),
+      json("""{"user":{"id":"2","username":"bob"}}"""),
+      json("""{"user":{"id":"3","username":"cy"},"nick":"Stale"}"""),
+      json("""{"user":{"id":"4","username":"dee"}}""")
+    ))
+    cache.endMemberLoad("10")
+    assertEquals("New Nick", guild.members("1").displayName)
+    assertFalse(guild.members.contains("2"))
+    assertEquals("Fresh", guild.members("3").displayName)
+    assertEquals("dee", guild.members("4").displayName)
+
+    // after the load ends, pages apply normally again
+    cache.upsertMembers("10", Seq(json("""{"user":{"id":"1","username":"ada"},"nick":"Later"}""")))
+    assertEquals("Later", guild.members("1").displayName)
+  }
+
+  @Test
   def messageCreateFillsMemberCache(): Unit = {
     apply("GUILD_CREATE", guildCreate)
     apply("MESSAGE_CREATE", """{"id":"1","channel_id":"100","guild_id":"10","channel_type":0,"type":0,"content":"hi",

@@ -6,12 +6,13 @@ import java.util
 import wowchat.common.ChatDirection.ChatDirection
 import wowchat.common.WowExpansion.WowExpansion
 import com.typesafe.config.{Config, ConfigFactory}
+import wowchat.fluxer.FluxerConfig
 import wowchat.game.GamePackets
 
 import scala.collection.JavaConverters._
 import scala.reflect.runtime.universe.{TypeTag, typeOf}
 
-case class WowChatConfig(chat: ChatConfig, wow: Wow, guildConfig: GuildConfig, channels: Seq[ChannelConfig], filters: Option[FiltersConfig])
+case class WowChatConfig(chat: ChatConfig, wow: Wow, guildConfig: GuildConfig, channels: Seq[ChannelConfig], filters: Option[FiltersConfig], fluxer: FluxerConfig)
 case class ChatConfig(enableDotCommands: Boolean, dotCommandsWhitelist: Set[String], enableCommandsChannels: Set[String], enableTagFailedNotifications: Boolean, itemDatabase: Option[String])
 case class Wow(locale: String, platform: Platform.Value, realmBuild: Option[Int], gameBuild: Option[Int], realmlist: RealmListConfig, account: Array[Byte], password: String, character: String, enableServerMotd: Boolean)
 case class RealmListConfig(name: String, host: String, port: Int)
@@ -49,6 +50,9 @@ object WowChatConfig extends GamePackets {
     val guildConf = getConfigOpt(config, "guild")
     val chatConf = config.getConfig("chat")
     val filtersConf = getConfigOpt(config, "filters")
+    val fluxerConf = getConfigOpt(config, "fluxer").getOrElse(
+      throw new IllegalArgumentException("The \"fluxer\" configuration section is missing. See the sample wowchat.conf.")
+    )
 
     // we gotta load this first to initialize constants that change between versions :OMEGALUL:
     version = getOpt(wowConf, "version").getOrElse("1.12.1")
@@ -77,7 +81,8 @@ object WowChatConfig extends GamePackets {
       ),
       parseGuildConfig(guildConf),
       parseChannels(chatConf),
-      parseFilters(filtersConf)
+      parseFilters(filtersConf),
+      FluxerConfig.fromConfig(fluxerConf)
     )
   }
 

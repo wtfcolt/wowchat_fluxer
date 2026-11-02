@@ -231,6 +231,7 @@ class FluxerTransport(config: FluxerConfig,
       memberSyncInProgress.add(guildId)
     }
     if (start) {
+      cache.beginMemberLoad(guildId)
       rest.foreach(_.runMemberTask(() => {
         try {
           var after: Option[String] = None
@@ -249,6 +250,7 @@ class FluxerTransport(config: FluxerConfig,
           }
           logger.info(s"Loaded $total member(s) of Fluxer guild $guildId.")
         } finally {
+          cache.endMemberLoad(guildId)
           synchronized {
             memberSyncInProgress.remove(guildId)
           }
