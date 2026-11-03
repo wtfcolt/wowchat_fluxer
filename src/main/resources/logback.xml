@@ -6,7 +6,6 @@
         </encoder>
     </appender>
 
-    <logger name="net.dv8tion.jda.core.requests.Requester" level="INFO" />
 
     <logger name="wowchat.game.GamePacketEncoder" level="INFO" />
     <logger name="wowchat.game.GamePacketEncoderCataclysm" level="INFO" />

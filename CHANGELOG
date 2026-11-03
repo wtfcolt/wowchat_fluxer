@@ -1,3 +1,21 @@
+Unreleased - Fluxer
+! WoWChat now relays chat with Fluxer instead of Discord. Discord support has been removed.
+! Configuration changes:
+    - New "fluxer" section: instance_url (or FLUXER_INSTANCE_URL), token (or FLUXER_TOKEN), and optional
+      api_url / gateway_url overrides.
+    - Shared chat settings moved from the "discord" section into the "chat" section.
+    - Channel relays use a "fluxer" block instead of "discord", and directions are both, wow_to_fluxer and fluxer_to_wow.
+    - Configurations with a "discord" section are rejected with an explanation.
++ Fluxer client with instance discovery, Gateway resume and reconnect, rate limit handling and member list loading.
++ Outgoing messages can never notify @everyone or @here.
++ Renamed channels keep working without a restart.
++ The application closes the Fluxer and WoW connections cleanly on shutdown.
+- Removed the check for new upstream WoWChat versions.
+* Fixed item and achievement links using "null" as the link site on TBC and later expansions when item_database was not set.
+* Fixed "$" being shown as "\$" in messages from WoW, and messages with "$" or "\" in item names or quoted tags failing to relay.
+
+The entries below are from the original Discord version of WoWChat.
+
 2022-02-20 - v1.3.8
 + Updates to used libraries.
 + Added build hashes and support for more 1.x vanilla builds.

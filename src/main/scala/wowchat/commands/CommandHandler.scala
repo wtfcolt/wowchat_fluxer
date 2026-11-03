@@ -1,15 +1,14 @@
 package wowchat.commands
 
 import com.typesafe.scalalogging.StrictLogging
-import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel
+import wowchat.chat.ChatChannel
 import wowchat.common.Global
-import wowchat.discord.Discord
 import wowchat.game.{GamePackets, GameResources, GuildInfo, GuildMember}
 
 import scala.collection.mutable
 import scala.util.Try
 
-case class WhoRequest(messageChannel: MessageChannel, playerName: String)
+case class WhoRequest(messageChannel: ChatChannel, playerName: String)
 case class WhoResponse(playerName: String, guildName: String, lvl: Int, cls: String, race: String, gender: Option[String], zone: String)
 
 object CommandHandler extends StrictLogging {
@@ -24,7 +23,7 @@ object CommandHandler extends StrictLogging {
 
   // returns back the message as an option if unhandled
   // needs to be refactored into a Map[String, <Intelligent Command Handler Function>]
-  def apply(fromChannel: MessageChannel, message: String): Boolean = {
+  def apply(fromChannel: ChatChannel, message: String): Boolean = {
     if (!message.startsWith(trigger)) {
       return false
     }
@@ -37,7 +36,7 @@ object CommandHandler extends StrictLogging {
       possibleCommand match {
         case "who" | "online" =>
           Global.game.fold({
-            Discord.sendMessage(fromChannel, NOT_ONLINE)
+            Global.chat.sendMessage(fromChannel, NOT_ONLINE)
             return true
           })(game => {
             val whoSucceeded = game.handleWho(arguments)
@@ -48,7 +47,7 @@ object CommandHandler extends StrictLogging {
           })
         case "gmotd" =>
           Global.game.fold({
-            Discord.sendMessage(fromChannel, NOT_ONLINE)
+            Global.chat.sendMessage(fromChannel, NOT_ONLINE)
             return true
           })(_.handleGmotd())
       }
@@ -58,7 +57,7 @@ object CommandHandler extends StrictLogging {
     }, opt => {
       // command found, do not send to wow chat
       if (opt.isDefined) {
-        Discord.sendMessage(fromChannel, opt.get)
+        Global.chat.sendMessage(fromChannel, opt.get)
       }
       true
     })

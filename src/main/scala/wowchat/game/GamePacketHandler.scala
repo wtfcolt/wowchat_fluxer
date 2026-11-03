@@ -9,7 +9,6 @@ import com.typesafe.scalalogging.StrictLogging
 import io.netty.buffer.{ByteBuf, PooledByteBufAllocator}
 import io.netty.channel.{ChannelFuture, ChannelHandlerContext, ChannelInboundHandlerAdapter}
 import wowchat.commands.{CommandHandler, WhoResponse}
-import wowchat.discord.Discord
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
@@ -62,7 +61,7 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
     gameEventCallback.disconnected
     Global.game = None
     if (inWorld) {
-      Global.discord.sendMessageFromWow(None, "Disconnected from server!", ChatEvents.CHAT_MSG_SYSTEM, None)
+      Global.chat.sendMessageFromWow(None, "Disconnected from server!", ChatEvents.CHAT_MSG_SYSTEM, None)
     }
     super.channelInactive(ctx)
   }
@@ -126,7 +125,7 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
   }
 
   protected def updateGuildiesOnline: Unit = {
-    Global.discord.changeGuildStatus(getGuildiesOnlineMessage(true))
+    Global.chat.changeGuildStatus(getGuildiesOnlineMessage(true))
   }
 
   protected def queryGuildName: Unit = {
@@ -327,7 +326,7 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
       .remove(nameQueryMessage.guid)
       .foreach(messages => {
         messages.foreach(message => {
-          Global.discord.sendMessageFromWow(Some(nameQueryMessage.name), message.message, message.tp, message.channel)
+          Global.chat.sendMessageFromWow(Some(nameQueryMessage.name), message.message, message.tp, message.channel)
         })
         playerRoster += nameQueryMessage.guid -> Player(nameQueryMessage.name, nameQueryMessage.charClass)
     })
@@ -417,7 +416,7 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
 
     logger.info("Successfully joined the world!")
     inWorld = true
-    Global.discord.changeRealmStatus(realmName)
+    Global.chat.changeRealmStatus(realmName)
     gameEventCallback.connected
     runKeepAliveExecutor
     runGuildRosterExecutor
@@ -521,7 +520,7 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
             .replace("%message", messages.head)
       }
 
-      Global.discord.sendGuildNotification(eventConfigKey, formatted)
+      Global.chat.sendGuildNotification(eventConfigKey, formatted)
     }
 
     updateGuildRoster
@@ -566,7 +565,7 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
 
   protected def sendChatMessage(chatMessage: ChatMessage): Unit = {
     if (chatMessage.guid == 0) {
-      Global.discord.sendMessageFromWow(None, chatMessage.message, chatMessage.tp, None)
+      Global.chat.sendMessageFromWow(None, chatMessage.message, chatMessage.tp, None)
     } else {
       playerRoster.get(chatMessage.guid).fold({
         queuedChatMessages.get(chatMessage.guid).fold({
@@ -574,7 +573,7 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
           sendNameQuery(chatMessage.guid)
         })(_ += chatMessage)
       })(name => {
-        Global.discord.sendMessageFromWow(Some(name.name), chatMessage.message, chatMessage.tp, chatMessage.channel)
+        Global.chat.sendMessageFromWow(Some(name.name), chatMessage.message, chatMessage.tp, chatMessage.channel)
       })
     }
   }
@@ -597,7 +596,7 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
     }
 
     // ignore if from an unhandled channel
-    if (!Global.wowToDiscord.contains((tp, channelName.map(_.toLowerCase)))) {
+    if (!Global.chat.shouldForwardWowChat(tp, channelName)) {
       return None
     }
 
@@ -682,10 +681,10 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
         )
         if (approximateMatches.isEmpty) {
           // No approximate matches found.
-          Discord.sendMessage(CommandHandler.whoRequest.messageChannel, s"No player named ${CommandHandler.whoRequest.playerName} is currently playing.")
+          Global.chat.sendMessage(CommandHandler.whoRequest.messageChannel, s"No player named ${CommandHandler.whoRequest.playerName} is currently playing.")
         } else {
           // Send at most 3 approximate matches.
-          approximateMatches.take(3).foreach(Discord.sendMessage(CommandHandler.whoRequest.messageChannel, _))
+          approximateMatches.take(3).foreach(Global.chat.sendMessage(CommandHandler.whoRequest.messageChannel, _))
         }
       } else {
         // Approximate matches found online!
@@ -694,11 +693,11 @@ class GamePacketHandler(realmId: Int, realmName: String, sessionKey: Array[Byte]
             guildInfo,
             guildRoster,
             guildMember => guildMember.name.equalsIgnoreCase(CommandHandler.whoRequest.playerName)
-          ).foreach(Discord.sendMessage(CommandHandler.whoRequest.messageChannel, _))
+          ).foreach(Global.chat.sendMessage(CommandHandler.whoRequest.messageChannel, _))
         })
       }
     } else {
-      handledResponses.foreach(Discord.sendMessage(CommandHandler.whoRequest.messageChannel, _))
+      handledResponses.foreach(Global.chat.sendMessage(CommandHandler.whoRequest.messageChannel, _))
     }
   }
 

@@ -100,7 +100,7 @@ class GamePacketHandlerTBC(realmId: Int, realmName: String, sessionKey: Array[By
     }
 
     // ignore if from an unhandled channel
-    if (!Global.wowToDiscord.contains((tp, channelName.map(_.toLowerCase)))) {
+    if (!Global.chat.shouldForwardWowChat(tp, channelName)) {
       return None
     }
 
